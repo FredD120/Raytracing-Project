@@ -53,6 +53,9 @@ public:
 	ThreeVector operator+(ThreeVector other) {
 		return ThreeVector(x + other.x, y + other.y, z + other.z);
 	}
+	ThreeVector invert() {
+		return ThreeVector(-x, -y, -z);
+	}
 };
 
 class Ray {
@@ -60,23 +63,20 @@ public:
 	ThreeVector origin;
 	ThreeVector direction;
 
-	Ray(ThreeVector& o, ThreeVector& d) : origin(o), direction(d.normalise()) {}
+	Ray(ThreeVector& o, ThreeVector& d) : origin(o), direction(d) {}
 
-	Ray() : origin(ThreeVector()), direction(ThreeVector().normalise()) {
+	Ray() : origin(ThreeVector()), direction(ThreeVector()) {
 		std::cout << "Default ray created" << std::endl;
 	}
-
-
-
 };
 
 class Sphere {
 public:
 	ThreeVector centre;
 	double radius;
-	int colour;
+	ThreeVector colour;
 
-	Sphere(ThreeVector& cen, double rad, int col) : centre(cen), radius(rad), colour(col){}
+	Sphere(ThreeVector& cen, double rad, ThreeVector col) : centre(cen), radius(rad), colour(col){}
 
 	double intersect(Ray current_ray) {
 		ThreeVector origin_to_center = current_ray.origin - centre;
@@ -85,18 +85,18 @@ public:
 		double c = origin_to_center.dot(origin_to_center) - radius * radius;
 		double discriminant = b * b - 4 * a * c;
 		if (discriminant > 0) {
-			double distance1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
-			double distance2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
-			if (0 < distance1 && distance1 < distance2) {
+			double distance1 = (-b - std::sqrt(discriminant)) / (2.0 * a); //another solution exists, but it's at the back of the sphere
+			if (0 < distance1) {
 				return distance1;
 			}
-			else {
-				return distance2; 
-			}	
 		}
 		else {
 			return -1;
 		}
+	}
+
+	ThreeVector normal(ThreeVector position) {
+		return (centre - position).normalise();
 	}
 };
 
@@ -139,10 +139,16 @@ public:
 };
 
 void render(Sphere object){
-	std::ofstream ImageFile("C:/Users/fwdan/cImageData.txt");
+	std::ofstream ImageFileR("C:/Users/fwdan/C++ Raytracing/ImageDataR.txt");
+	std::ofstream ImageFileG("C:/Users/fwdan/C++ Raytracing/ImageDataG.txt");
+	std::ofstream ImageFileB("C:/Users/fwdan/C++ Raytracing/ImageDataB.txt");
 
 	int width = 1000;
 	int height = 1000;
+
+	double lightsource_brightness = 0.8;
+	double ambient_brightness = 1-lightsource_brightness;
+	ThreeVector lightsource_position(1,5,-1);
 
 	ThreeVector camera_position(0, 0, 0);
 	ThreeVector camera_up(0, 1, 0);
@@ -157,23 +163,41 @@ void render(Sphere object){
 			Ray ray1(camera_position, ray_direction);
 			double min_distance = object.intersect(ray1);
 			if (min_distance > 0) {
-				int nearest_colour = object.colour;
-				ImageFile << nearest_colour << " ";
+				ThreeVector intersect_pos = camera_position + ray_direction.scalar_product(min_distance);
+				ThreeVector light_to_sphere = (lightsource_position - intersect_pos).normalise().invert();
+				double lightsource_reflection = lightsource_brightness * object.normal(intersect_pos).dot(light_to_sphere);
+				ThreeVector nearest_colour = object.colour;
+				if (lightsource_reflection>0){
+					nearest_colour = object.colour.scalar_product(ambient_brightness + lightsource_reflection);
+				}
+				else {
+					nearest_colour = object.colour.scalar_product(ambient_brightness);
+				}
+				ImageFileR << static_cast<int>(nearest_colour.x) << " ";
+				ImageFileG << static_cast<int>(nearest_colour.y) << " ";
+				ImageFileB << static_cast<int>(nearest_colour.z) << " ";
 			}
 			else {
-				ImageFile << 0 << " ";
+				ImageFileR << 0 << " ";
+				ImageFileG << 0 << " ";
+				ImageFileB << 0 << " ";
 			}
 		}
-		ImageFile << "\n";
+		ImageFileR << "\n";
+		ImageFileG << "\n";
+		ImageFileB << "\n";
 	}
-	ImageFile.close();
+	ImageFileR.close();
+	ImageFileG.close();
+	ImageFileB.close();
 }
 
 int main() {
 	
 	ThreeVector Centre1(0, 0, 3);
 	double radius1 = 1;
-	Sphere object1(Centre1, radius1, 1);
+	ThreeVector colour1(0, 200, 200);
+	Sphere object1(Centre1, radius1, colour1);
 	render(object1);
 	
 	return 0;
