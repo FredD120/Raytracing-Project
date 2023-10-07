@@ -117,6 +117,43 @@ public:
 	}
 };
 
+class Light {
+public:
+	double lightsource_brightness;
+	double ambient_brightness;
+	ThreeVector lightsource_position;
+
+	Light(double brightness, ThreeVector pos) : lightsource_brightness(brightness), ambient_brightness(1 - brightness), lightsource_position(pos) {}
+
+	Light() : lightsource_brightness(0.8), ambient_brightness(0.2), lightsource_position(ThreeVector()) {}
+
+};
+
+class Camera {
+	ThreeVector camera_position;
+	ThreeVector camera_up;
+	ThreeVector camera_direction;
+	ThreeVector camera_right;
+
+	Camera()
+
+
+
+};
+
+ThreeVector on_hit() {
+	ThreeVector intersect_pos = camera_position + ray_direction.scalar_product(min_distance);
+	ThreeVector light_to_sphere = (lightsource_position - intersect_pos).normalise();
+	double lightsource_reflection = lightsource_brightness * current_object_pointer->normal(intersect_pos).dot(light_to_sphere);
+
+	if (lightsource_reflection > 0) {
+		return current_object_pointer->colour.scalar_product(ambient_brightness + lightsource_reflection);
+	}
+	else {
+		return current_object_pointer->colour.scalar_product(ambient_brightness);
+	}
+}
+
 void render(std::list<Sphere> objects){
 	
 	int width = 1000;
@@ -124,9 +161,9 @@ void render(std::list<Sphere> objects){
 
 	std::cout << "P3\n" << width << ' ' << height << "\n255\n";
 
-	double lightsource_brightness = 0.8;
-	double ambient_brightness = 1-lightsource_brightness;
-	ThreeVector lightsource_position(1.5,1,-2);
+	
+	Light lightsource(0.8, ThreeVector(1.5, 1, -2))
+
 
 	ThreeVector camera_position(0, 0, -5);
 	ThreeVector camera_up(0, 1, 0);
@@ -155,16 +192,11 @@ void render(std::list<Sphere> objects){
 				}
 			}			
 			if (current_object_pointer != nullptr) {
-				ThreeVector intersect_pos = camera_position + ray_direction.scalar_product(min_distance);
-				ThreeVector light_to_sphere = (lightsource_position - intersect_pos).normalise();
-				double lightsource_reflection = lightsource_brightness * current_object_pointer->normal(intersect_pos).dot(light_to_sphere);
 				ThreeVector nearest_colour = ThreeVector();
-				if (lightsource_reflection>0){
-					nearest_colour = current_object_pointer->colour.scalar_product(ambient_brightness + lightsource_reflection);
-				}
-				else {
-					nearest_colour = current_object_pointer->colour.scalar_product(ambient_brightness);
-				}
+
+				
+
+
 				rchannel = static_cast<int>(nearest_colour.x());
 				gchannel = static_cast<int>(nearest_colour.y());
 				bchannel = static_cast<int>(nearest_colour.z());
@@ -188,15 +220,15 @@ int main() {
 	double radius3 = 95;
 	ThreeVector colour3(50, 250, 50);
 
-	ThreeVector light(2, -1, 3);
-	double light_radius = 0.5;
-	ThreeVector light_colour(250, 250, 250);
+	ThreeVector white(2, -1, 3);
+	double white_radius = 0.5;
+	ThreeVector white_colour(250, 250, 250);
 
 	Sphere object1(Centre1, radius1, colour1);
 	Sphere object2(Centre2, radius2, colour2);
 	Sphere object3(Centre3, radius3, colour3);
-	Sphere lightsource(light, light_radius, light_colour);
-	std::list<Sphere> scene = {object1,object2,object3,lightsource};
+	Sphere whitesource(white, white_radius, white_colour);
+	std::list<Sphere> scene = {object1,object2,object3,whitesource};
 	render(scene);
 	
 	return 0;
