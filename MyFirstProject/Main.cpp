@@ -7,26 +7,26 @@
 
 class ThreeVector {
 public:
-	double x;
-	double y;
-	double z;
+	double e[3];
 
-	ThreeVector() : x(1), y(1), z(1) {}
+	ThreeVector() : e{ 0,0,0 } {}
 
-	ThreeVector(double entry1, double entry2, double entry3) :
-		x(entry1), y(entry2), z(entry3) {}
+	ThreeVector(double e0, double e1, double e2) : e{ e0, e1, e2 } {}
 
+	double x() const { return e[0]; }
+	double y() const { return e[1]; }
+	double z() const { return e[2]; }
 
 	void print_vector() {
-		std::cout << x << "\n" << y << "\n" << z << std::endl;
+		std::cout << e[0] << "\n" << e[1] << "\n" << e[2] << std::endl;
 	}
 	
-	double dot(ThreeVector other) {
-		return x * other.x + y * other.y + z * other.z;
+	double dot(const ThreeVector &other) {
+		return e[0] * other.e[0] + e[1] * other.e[1] + e[2] * other.e[2];
 	}
 
-	ThreeVector cross(ThreeVector other) {
-		return ThreeVector(y * other.z - z * other.y, z* other.x - x * other.z, x* other.y - y * other.x);
+	ThreeVector cross(const ThreeVector &other) {
+		return ThreeVector(e[1] * other.e[2] - e[2] * other.e[1], e[2] * other.e[0] - e[0] * other.e[2], e[0] * other.e[1] - e[1] * other.e[0]);
 	}
 
 	ThreeVector normalise() {
@@ -35,27 +35,35 @@ public:
 			std::cout << "Magnitude zero vector cannot be normalised" << std::endl;
 			return *this;
 		} else {
-			return ThreeVector(x / mag, y / mag, z / mag);
+			return ThreeVector(e[0] / mag, e[1] / mag, e[2] / mag);
 		}
 	}
 
-	ThreeVector scalar_product(double alpha) {
-		return ThreeVector(x * alpha, y * alpha, z * alpha);
-	}
-
 	double magnitude() {
-		return std::sqrt(x*x + y*y + z*z);
+		return std::sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
 	}
 
-	ThreeVector operator-(ThreeVector other) {
-		return ThreeVector(x - other.x, y - other.y, z - other.z);
+	ThreeVector& operator*=(double alpha) {
+		e[0] *= alpha;
+		e[1] *= alpha;
+		e[2] *= alpha;
+		return *this;
 	}
 
-	ThreeVector operator+(ThreeVector other) {
-		return ThreeVector(x + other.x, y + other.y, z + other.z);
+	ThreeVector scalar_product(double alpha) {
+		return ThreeVector(e[0] * alpha, e[1] * alpha, e[2] * alpha);
 	}
+
+	ThreeVector operator-(const ThreeVector &other) {
+		return ThreeVector(e[0] - other.e[0], e[1] - other.e[1], e[2] - other.e[2]);
+	}
+
+	ThreeVector operator+(const ThreeVector &other) {
+		return ThreeVector(e[0] + other.e[0], e[1] + other.e[1], e[2] + other.e[2]);
+	}
+
 	ThreeVector invert() {
-		return ThreeVector(-x, -y, -z);
+		return ThreeVector(-e[0], -e[1], -e[2]);
 	}
 };
 
@@ -110,12 +118,11 @@ public:
 };
 
 void render(std::list<Sphere> objects){
-	std::ofstream ImageFileR("C:/Users/fwdan/C++ Raytracing/ImageDataR.txt");
-	std::ofstream ImageFileG("C:/Users/fwdan/C++ Raytracing/ImageDataG.txt");
-	std::ofstream ImageFileB("C:/Users/fwdan/C++ Raytracing/ImageDataB.txt");
-
+	
 	int width = 1000;
 	int height = 1000;
+
+	std::cout << "P3\n" << width << ' ' << height << "\n255\n";
 
 	double lightsource_brightness = 0.8;
 	double ambient_brightness = 1-lightsource_brightness;
@@ -128,6 +135,10 @@ void render(std::list<Sphere> objects){
 
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
+			int rchannel = 0;
+			int gchannel = 0;
+			int bchannel = 0;
+
 			double u = (x - width / 2.0) / static_cast<double>(width);
 			double v = -(y - height / 2.0) / static_cast<double>(height);
 			ThreeVector ray_direction = camera_direction + camera_right.scalar_product(u) + camera_up.scalar_product(v);
@@ -154,23 +165,13 @@ void render(std::list<Sphere> objects){
 				else {
 					nearest_colour = current_object_pointer->colour.scalar_product(ambient_brightness);
 				}
-				ImageFileR << static_cast<int>(nearest_colour.x) << " ";
-				ImageFileG << static_cast<int>(nearest_colour.y) << " ";
-				ImageFileB << static_cast<int>(nearest_colour.z) << " ";
+				rchannel = static_cast<int>(nearest_colour.x());
+				gchannel = static_cast<int>(nearest_colour.y());
+				bchannel = static_cast<int>(nearest_colour.z());
 			}
-			else {
-				ImageFileR << 0 << " ";
-				ImageFileG << 0 << " ";
-				ImageFileB << 0 << " ";
-			}
+			std::cout << rchannel << ' ' << gchannel << ' ' << bchannel << '\n';
 		}
-		ImageFileR << "\n";
-		ImageFileG << "\n";
-		ImageFileB << "\n";
 	}
-	ImageFileR.close();
-	ImageFileG.close();
-	ImageFileB.close();
 }
 
 int main() {
