@@ -1,25 +1,36 @@
 #include <iostream>
 #include <cmath>
-#include <fstream>
 #include <list>
 #include <limits>
+#include <random>
 
-
+class RandomNumberGenerator {
+private:
+	std::mt19937 rng;
+	std::uniform_real_distribution<double> dist;
+public:
+	RandomNumberGenerator(double low = -1.0, double high = 1.0) : rng(std::random_device{}()), dist(low, high) {}
+	double generate() {
+		return dist(rng);
+	}
+};
 class ThreeVector {
 public:
 	double e[3];
-
 	ThreeVector() : e{ 0,0,0 } {}
 
 	ThreeVector(double e0, double e1, double e2) : e{ e0, e1, e2 } {}
 
+	ThreeVector(double min, double max) {
+		RandomNumberGenerator rand(min, max);
+		e[0] = rand.generate();
+		e[1] = rand.generate();
+		e[2] = rand.generate();
+	}
+
 	double x() const { return e[0]; }
 	double y() const { return e[1]; }
 	double z() const { return e[2]; }
-
-	void print_vector() {
-		std::cout << e[0] << "\n" << e[1] << "\n" << e[2] << std::endl;
-	}
 	
 	double dot(const ThreeVector &other) {
 		return e[0] * other.e[0] + e[1] * other.e[1] + e[2] * other.e[2];
@@ -29,29 +40,48 @@ public:
 		return ThreeVector(e[1] * other.e[2] - e[2] * other.e[1], e[2] * other.e[0] - e[0] * other.e[2], e[0] * other.e[1] - e[1] * other.e[0]);
 	}
 
+	void print() {
+		std::clog << e[0] << ' ' << e[1] << ' ' << e[2] << '\n';
+	}
+
 	ThreeVector normalise() {
 		double mag = magnitude();
 		if (mag == 0){
-			std::cout << "Magnitude zero vector cannot be normalised" << std::endl;
+			std::clog << "Magnitude zero vector cannot be normalised" << std::endl;
 			return *this;
 		} else {
 			return ThreeVector(e[0] / mag, e[1] / mag, e[2] / mag);
 		}
 	}
 
-	double magnitude() {
-		return std::sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+	double length_squared() {
+		return e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
 	}
 
-	ThreeVector& operator*=(double alpha) {
+	double magnitude() {
+		return std::sqrt(length_squared());
+	}
+
+	ThreeVector& operator*=(double &alpha) {
 		e[0] *= alpha;
 		e[1] *= alpha;
 		e[2] *= alpha;
 		return *this;
 	}
 
-	ThreeVector scalar_product(double alpha) {
+	ThreeVector& operator+=(const ThreeVector &other) {
+		e[0] += other.x();
+		e[1] += other.y();
+		e[2] += other.z();
+		return *this;
+	}
+
+	ThreeVector operator*(double alpha) {
 		return ThreeVector(e[0] * alpha, e[1] * alpha, e[2] * alpha);
+	}
+
+	ThreeVector operator/(double alpha) {
+		return ThreeVector(e[0] / alpha, e[1] / alpha, e[2] / alpha);
 	}
 
 	ThreeVector operator-(const ThreeVector &other) {
@@ -65,6 +95,22 @@ public:
 	ThreeVector invert() {
 		return ThreeVector(-e[0], -e[1], -e[2]);
 	}
+
+	ThreeVector clamp(double min,double max) {
+		for (double &coord : e) {
+			if (coord > max) {
+				coord = max;
+			}
+			else if (coord < min) {
+				coord = min;
+			}
+		}
+		return *this;
+	}
+
+	ThreeVector reflect(ThreeVector& normal) {
+		return *this - normal*((2 * this->dot(normal) / normal.length_squared()));
+	}
 };
 
 class Ray {
@@ -77,24 +123,33 @@ public:
 	Ray() : origin(ThreeVector()), direction(ThreeVector()) {}
 };
 
+class MaterialProperties {
+public:
+	ThreeVector colour;
+	double diffusivity; //Extent to which light is reflected deterministically
+	double attenuation; //Energy loss on reflect
+
+	MaterialProperties(ThreeVector col, double diffuse, double attenuate) : colour(col), diffusivity(diffuse), attenuation(attenuate) {}
+	MaterialProperties() : colour(ThreeVector(0,0,0)), diffusivity(0), attenuation(0.95) {}
+};
+
 class Sphere {
 public:
 	ThreeVector centre;
 	double radius;
-	ThreeVector colour;
+	MaterialProperties material;
 
-	Sphere(ThreeVector& cen, double rad, ThreeVector col) : centre(cen), radius(rad), colour(col){}
-
-	Sphere() : centre(ThreeVector()), radius(1), colour(ThreeVector()) {}
+	Sphere(ThreeVector cen, double rad, MaterialProperties mat) : centre(cen), radius(rad), material(mat){}
+	Sphere() : centre(ThreeVector()), radius(1), material(MaterialProperties()) {}
 
 	double intersect(Ray current_ray) {
 		ThreeVector origin_to_center = current_ray.origin - centre;
-		double a = current_ray.direction.dot(current_ray.direction);
-		double b = 2 * origin_to_center.dot(current_ray.direction);
+		double a = current_ray.direction.length_squared();
+		double half_b = origin_to_center.dot(current_ray.direction);
 		double c = origin_to_center.dot(origin_to_center) - radius * radius;
-		double discriminant = b * b - 4 * a * c;
+		double discriminant = half_b * half_b - a * c;
 		if (discriminant > 0) {
-			double distance1 = (-b - std::sqrt(discriminant)) / (2.0 * a);
+			double distance1 = (-half_b - std::sqrt(discriminant)) / a;
 				if (distance1 > 0) {
 					return distance1;
 				}
@@ -111,64 +166,99 @@ public:
 		}
 		return std::numeric_limits<double>::max();
 	}
-
-	ThreeVector normal(ThreeVector position) {
-		return (position - centre).normalise();
+	ThreeVector normal(ThreeVector &position) {
+		return (position - centre)/radius;
 	}
 };
 
 class Light {
 public:
-	double lightsource_brightness;
-	double ambient_brightness;
-	ThreeVector lightsource_position;
-
-	Light(double brightness, ThreeVector pos) : lightsource_brightness(brightness), ambient_brightness(1 - brightness), lightsource_position(pos) {}
-
-	Light() : lightsource_brightness(0.8), ambient_brightness(0.2), lightsource_position(ThreeVector()) {}
-
+	ThreeVector skycolour;
+	ThreeVector position;
+	double brightness;
+	
+	Light(ThreeVector sky, ThreeVector pos, double bright) : skycolour(sky),  position(pos), brightness(bright) {}
+	Light() : skycolour(ThreeVector()), position(ThreeVector()), brightness(0.8) {}
 };
 
 class Camera {
-	ThreeVector camera_position;
-	ThreeVector camera_up;
-	ThreeVector camera_direction;
-	ThreeVector camera_right;
+public:
+	ThreeVector	position;
+	ThreeVector up;
+	ThreeVector direction;
+	ThreeVector right;
 
-	Camera()
-
-
-
+	Camera(ThreeVector pos, ThreeVector u, ThreeVector dir) :position(pos), up(u), direction(dir), right(dir.cross(up)) {}
+	Camera() :position(ThreeVector(0,0,0)), up(ThreeVector(0, 1, 0)), direction(ThreeVector(0, 0, 1)), right(ThreeVector(1, 0, 0)) {}
 };
 
-ThreeVector on_hit() {
-	ThreeVector intersect_pos = camera_position + ray_direction.scalar_product(min_distance);
-	ThreeVector light_to_sphere = (lightsource_position - intersect_pos).normalise();
-	double lightsource_reflection = lightsource_brightness * current_object_pointer->normal(intersect_pos).dot(light_to_sphere);
+struct ray_payload {
+	Sphere* sphere_pointer;
+	double distance;
+	ray_payload(Sphere* point, double dis) : sphere_pointer(point), distance(dis) {}
+};
 
-	if (lightsource_reflection > 0) {
-		return current_object_pointer->colour.scalar_product(ambient_brightness + lightsource_reflection);
+ray_payload get_payload(Ray& current_ray,std::list<Sphere>& spheres){
+	Sphere* current_object_pointer = nullptr;
+	double min_distance = std::numeric_limits<double>::max();
+	for (Sphere& sphere : spheres) {
+		double current_distance = sphere.intersect(current_ray);
+		if (current_distance < min_distance) {
+			min_distance = current_distance;
+			current_object_pointer = &sphere;
+		}
 	}
-	else {
-		return current_object_pointer->colour.scalar_product(ambient_brightness);
-	}
+	ray_payload payload(current_object_pointer, min_distance);
+	return payload;
 }
 
-void render(std::list<Sphere> objects){
-	
+ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_light, int &remaining_bounces) {
+	ThreeVector current_colour(0,0,0);
+	double multiplier = 1;
+
+	for (int i = 0; i < remaining_bounces; i++) {
+		ray_payload payload = get_payload(current_ray, spheres);
+		if (payload.sphere_pointer != nullptr) {
+			ThreeVector intersect_pos = current_ray.origin + current_ray.direction*payload.distance;
+			ThreeVector hitpoint_normal = payload.sphere_pointer->normal(intersect_pos);
+
+
+			/*
+			ThreeVector light_to_sphere = (all_light.position - intersect_pos).normalise();
+			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere);
+			*/
+
+			ThreeVector light_to_sphere = (all_light.position - intersect_pos);
+			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere)/light_to_sphere.length_squared();
+
+			current_colour += payload.sphere_pointer->material.colour*(std::max(lightsource_reflection,0.0))*multiplier;
+			multiplier *= payload.sphere_pointer->material.attenuation;
+
+			current_ray.origin = intersect_pos + hitpoint_normal*0.0001;
+			ThreeVector new_normal = hitpoint_normal + ThreeVector(-0.5, 0.5) * payload.sphere_pointer->material.diffusivity;
+			current_ray.direction = current_ray.direction.reflect(new_normal);
+		}
+		else {
+			current_colour += all_light.skycolour*multiplier;
+			break;
+		}
+	}
+	return current_colour;
+}
+
+void render(std::list<Sphere>& objects) {
 	int width = 1000;
 	int height = 1000;
 
+	int bounces = 10;
+	int ray_count = 30;
+
+	RandomNumberGenerator rng(-0.5, 0.5);
+
 	std::cout << "P3\n" << width << ' ' << height << "\n255\n";
 
-	
-	Light lightsource(0.8, ThreeVector(1.5, 1, -2))
-
-
-	ThreeVector camera_position(0, 0, -5);
-	ThreeVector camera_up(0, 1, 0);
-	ThreeVector camera_direction(0, -0.2, 1);
-	ThreeVector camera_right = camera_direction.cross(camera_up);
+	Light lightsource(ThreeVector(200, 200, 255), ThreeVector(0, 2, -2), 2);
+	Camera this_camera(ThreeVector(0, 1.9, -7), ThreeVector(0, 1, 0), ThreeVector(0, -0.1, 1));
 
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
@@ -178,58 +268,38 @@ void render(std::list<Sphere> objects){
 
 			double u = (x - width / 2.0) / static_cast<double>(width);
 			double v = -(y - height / 2.0) / static_cast<double>(height);
-			ThreeVector ray_direction = camera_direction + camera_right.scalar_product(u) + camera_up.scalar_product(v);
-			Ray ray1(camera_position, ray_direction);
 
-			double min_distance = std::numeric_limits<double>::max();
-			Sphere* current_object_pointer = nullptr;
+			ThreeVector pixel_colour(0, 0, 0);
 
-			for (Sphere& object : objects) {
-				double current_distance = object.intersect(ray1);
-				if (current_distance < min_distance) {
-					min_distance = current_distance;
-					current_object_pointer = &object;
+			if(ray_count > 1){
+				for (int i = 0; i < ray_count; i++) {
+					ThreeVector ray_direction = this_camera.direction + this_camera.right * (u + rng.generate() / width) + this_camera.up * (v + rng.generate() / height);
+					Ray ray1(this_camera.position, ray_direction);
+					pixel_colour += emit_ray(ray1, objects, lightsource, bounces).clamp(0, 255);
 				}
-			}			
-			if (current_object_pointer != nullptr) {
-				ThreeVector nearest_colour = ThreeVector();
-
-				
-
-
-				rchannel = static_cast<int>(nearest_colour.x());
-				gchannel = static_cast<int>(nearest_colour.y());
-				bchannel = static_cast<int>(nearest_colour.z());
+				pixel_colour = pixel_colour / ray_count;
 			}
+			else {
+				ThreeVector ray_direction = this_camera.direction + this_camera.right * u + this_camera.up * v;
+				Ray ray1(this_camera.position, ray_direction);
+				pixel_colour = emit_ray(ray1, objects, lightsource, bounces).clamp(0, 255);
+			}
+
+			rchannel = static_cast<int>(pixel_colour.x());
+			gchannel = static_cast<int>(pixel_colour.y());
+			bchannel = static_cast<int>(pixel_colour.z());
 			std::cout << rchannel << ' ' << gchannel << ' ' << bchannel << '\n';
 		}
 	}
 }
-
 int main() {
+	Sphere object1(ThreeVector(2, 0.8, 0), 0.8, MaterialProperties(ThreeVector(20,10,220), 0.2, 0.7));
+	Sphere object2(ThreeVector(-2, 0.8, 0), 0.8, MaterialProperties(ThreeVector(200, 50, 100), 0.3, 0));
+	Sphere object3(ThreeVector(0, 1.2, 0), 1.2, MaterialProperties(ThreeVector(0,0,0), 0, 0.95));
+	Sphere object4(ThreeVector(0, -500, 0), 500, MaterialProperties(ThreeVector(50, 200, 50), 0, 0));
 	
-	ThreeVector Centre1(1, 0.5, 6);
-	double radius1 = 1;
-	ThreeVector colour1(200, 0, 200);
 
-	ThreeVector Centre2(-1, -0.5, 4);
-	double radius2 = 1.4;
-	ThreeVector colour2(0, 150, 250);
-
-	ThreeVector Centre3(0, -100, 3);
-	double radius3 = 95;
-	ThreeVector colour3(50, 250, 50);
-
-	ThreeVector white(2, -1, 3);
-	double white_radius = 0.5;
-	ThreeVector white_colour(250, 250, 250);
-
-	Sphere object1(Centre1, radius1, colour1);
-	Sphere object2(Centre2, radius2, colour2);
-	Sphere object3(Centre3, radius3, colour3);
-	Sphere whitesource(white, white_radius, white_colour);
-	std::list<Sphere> scene = {object1,object2,object3,whitesource};
+	std::list<Sphere> scene = {object1,object2,object3,object4};
 	render(scene);
-	
 	return 0;
 }
