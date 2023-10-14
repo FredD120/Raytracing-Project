@@ -3,17 +3,19 @@
 #include <list>
 #include <limits>
 #include <random>
+#include <vector>
+#include <chrono>
 
-class RandomNumberGenerator {
-private:
-	std::mt19937 rng;
-	std::uniform_real_distribution<double> dist;
-public:
-	RandomNumberGenerator(double low = -1.0, double high = 1.0) : rng(std::random_device{}()), dist(low, high) {}
-	double generate() {
-		return dist(rng);
-	}
-};
+static uint32_t PCGHash(uint32_t input) { //faster rng
+	uint32_t state = input * 747796405u + 2891336453u;
+	uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+static double RandomDouble(uint32_t& seed) {
+	seed = PCGHash(seed);
+	return ((double)seed / (double)std::numeric_limits<uint32_t>::max());
+}
+
 class ThreeVector {
 public:
 	double e[3];
@@ -21,11 +23,10 @@ public:
 
 	ThreeVector(double e0, double e1, double e2) : e{ e0, e1, e2 } {}
 
-	ThreeVector(double min, double max) {
-		RandomNumberGenerator rand(min, max);
-		e[0] = rand.generate();
-		e[1] = rand.generate();
-		e[2] = rand.generate();
+	ThreeVector(double& min, double& max, uint32_t& seed) { //fast rng
+		e[0] = RandomDouble(seed) * (max - min) + min;
+		e[1] = RandomDouble(seed) * (max - min) + min;
+		e[2] = RandomDouble(seed) * (max - min) + min;
 	}
 
 	double x() const { return e[0]; }
@@ -130,7 +131,7 @@ public:
 	double attenuation; //Energy loss on reflect
 
 	MaterialProperties(ThreeVector col, double diffuse, double attenuate) : colour(col), diffusivity(diffuse), attenuation(attenuate) {}
-	MaterialProperties() : colour(ThreeVector(0,0,0)), diffusivity(0), attenuation(0.95) {}
+	MaterialProperties() : colour(ThreeVector(0,0,0)), diffusivity(0), attenuation(0.97) {}
 };
 
 class Sphere {
@@ -173,12 +174,17 @@ public:
 
 class Light {
 public:
-	ThreeVector skycolour;
+	
 	ThreeVector position;
 	double brightness;
 	
-	Light(ThreeVector sky, ThreeVector pos, double bright) : skycolour(sky),  position(pos), brightness(bright) {}
-	Light() : skycolour(ThreeVector()), position(ThreeVector()), brightness(0.8) {}
+	Light(ThreeVector pos, double bright) : position(pos), brightness(bright) {}
+	Light() : position(ThreeVector()), brightness(0.8) {}
+
+	ThreeVector skycolour(ThreeVector &ray_dir) {
+		double a = 2*(ray_dir.normalise().y() + 1);
+		return ThreeVector(255, 255, 255) * (1 - a) + ThreeVector(180, 220, 255) * a;
+	}
 };
 
 class Camera {
@@ -212,7 +218,7 @@ ray_payload get_payload(Ray& current_ray,std::list<Sphere>& spheres){
 	return payload;
 }
 
-ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_light, int &remaining_bounces) {
+ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_light, int &remaining_bounces, uint32_t &seed) {
 	ThreeVector current_colour(0,0,0);
 	double multiplier = 1;
 
@@ -221,25 +227,27 @@ ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_li
 		if (payload.sphere_pointer != nullptr) {
 			ThreeVector intersect_pos = current_ray.origin + current_ray.direction*payload.distance;
 			ThreeVector hitpoint_normal = payload.sphere_pointer->normal(intersect_pos);
-
-
-			/*
-			ThreeVector light_to_sphere = (all_light.position - intersect_pos).normalise();
+			//General directional lighting
+			
+			ThreeVector light_to_sphere = (all_light.position - intersect_pos).normalise(); 
 			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere);
+			
+			//Attenuation of light for a more physical result// 
+			/*
+			ThreeVector light_to_sphere = (all_light.position - intersect_pos); 
+			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere)/light_to_sphere.length_squared();
 			*/
 
-			ThreeVector light_to_sphere = (all_light.position - intersect_pos);
-			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere)/light_to_sphere.length_squared();
-
-			current_colour += payload.sphere_pointer->material.colour*(std::max(lightsource_reflection,0.0))*multiplier;
+			
+			current_colour += payload.sphere_pointer->material.colour*(std::max(lightsource_reflection,0.2))*multiplier;
 			multiplier *= payload.sphere_pointer->material.attenuation;
 
 			current_ray.origin = intersect_pos + hitpoint_normal*0.0001;
-			ThreeVector new_normal = hitpoint_normal + ThreeVector(-0.5, 0.5) * payload.sphere_pointer->material.diffusivity;
+			ThreeVector new_normal = hitpoint_normal + ThreeVector(-0.5,0.5,seed) * payload.sphere_pointer->material.diffusivity;
 			current_ray.direction = current_ray.direction.reflect(new_normal);
 		}
 		else {
-			current_colour += all_light.skycolour*multiplier;
+			current_colour += all_light.skycolour(current_ray.direction)*multiplier;
 			break;
 		}
 	}
@@ -250,15 +258,16 @@ void render(std::list<Sphere>& objects) {
 	int width = 1000;
 	int height = 1000;
 
-	int bounces = 10;
-	int ray_count = 30;
+	//Very expensive
+	int bounces = 2;
+	int ray_count = 100;
 
-	RandomNumberGenerator rng(-0.5, 0.5);
+	//RandomNumberGenerator rng();
 
 	std::cout << "P3\n" << width << ' ' << height << "\n255\n";
 
-	Light lightsource(ThreeVector(200, 200, 255), ThreeVector(0, 2, -2), 2);
-	Camera this_camera(ThreeVector(0, 1.9, -7), ThreeVector(0, 1, 0), ThreeVector(0, -0.1, 1));
+	Light lightsource(ThreeVector(0, 8, 2), 2);
+	Camera this_camera(ThreeVector(0, 4, -8), ThreeVector(0, 1, 0), ThreeVector(0, -0.5, 1));
 
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
@@ -273,16 +282,18 @@ void render(std::list<Sphere>& objects) {
 
 			if(ray_count > 1){
 				for (int i = 0; i < ray_count; i++) {
-					ThreeVector ray_direction = this_camera.direction + this_camera.right * (u + rng.generate() / width) + this_camera.up * (v + rng.generate() / height);
+					uint32_t seed = (y + i + 1) * (x + 1);
+					ThreeVector ray_direction = this_camera.direction + this_camera.right * (u + (RandomDouble(seed) - 0.5) / width) + this_camera.up * (v + (RandomDouble(seed) - 0.5) / height);
 					Ray ray1(this_camera.position, ray_direction);
-					pixel_colour += emit_ray(ray1, objects, lightsource, bounces).clamp(0, 255);
+					pixel_colour += emit_ray(ray1, objects, lightsource, bounces, seed).clamp(0, 255);
 				}
 				pixel_colour = pixel_colour / ray_count;
 			}
 			else {
+				uint32_t seed = (y + 1) * (x + 1);
 				ThreeVector ray_direction = this_camera.direction + this_camera.right * u + this_camera.up * v;
 				Ray ray1(this_camera.position, ray_direction);
-				pixel_colour = emit_ray(ray1, objects, lightsource, bounces).clamp(0, 255);
+				pixel_colour = emit_ray(ray1, objects, lightsource, bounces, seed).clamp(0, 255);
 			}
 
 			rchannel = static_cast<int>(pixel_colour.x());
@@ -293,13 +304,21 @@ void render(std::list<Sphere>& objects) {
 	}
 }
 int main() {
-	Sphere object1(ThreeVector(2, 0.8, 0), 0.8, MaterialProperties(ThreeVector(20,10,220), 0.2, 0.7));
-	Sphere object2(ThreeVector(-2, 0.8, 0), 0.8, MaterialProperties(ThreeVector(200, 50, 100), 0.3, 0));
-	Sphere object3(ThreeVector(0, 1.2, 0), 1.2, MaterialProperties(ThreeVector(0,0,0), 0, 0.95));
-	Sphere object4(ThreeVector(0, -500, 0), 500, MaterialProperties(ThreeVector(50, 200, 50), 0, 0));
-	
+	//Sphere object1(ThreeVector(2.5, 1, 0), 1, MaterialProperties(ThreeVector(200,0,0), 0.6, 0.2));
+	//Sphere object2(ThreeVector(-2.5, 1, 0), 1, MaterialProperties(ThreeVector(0, 200, 0), 0.6, 0.2));
+	//Sphere object3(ThreeVector(0, 1, 2), 1, MaterialProperties(ThreeVector(0,0,200), 0.6, 0.2));
+	//Sphere object4(ThreeVector(0, -500, 0), 500, MaterialProperties(ThreeVector(100,100,100), 1, 0));
+	//std::list<Sphere> scene = {object1,object2,object3,object4};
 
-	std::list<Sphere> scene = {object1,object2,object3,object4};
+	Sphere object(ThreeVector(0, 0.5, 0), 3, MaterialProperties(ThreeVector(0, 0, 0), 1, 0.97));
+	std::list<Sphere> scene = { object };
+
+	auto start = std::chrono::high_resolution_clock::now();
 	render(scene);
+	auto end = std::chrono::high_resolution_clock::now();
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+	std::clog << "Function took " << duration.count() << " milliseconds to execute." << std::endl;
+	system("pause");
 	return 0;
 }
