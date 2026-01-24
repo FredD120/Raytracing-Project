@@ -6,11 +6,13 @@
 #include <vector>
 #include <chrono>
 
-static uint32_t PCGHash(uint32_t input) { //faster rng
+//returns a random 32-bit integer, using a fast RNG
+static uint32_t PCGHash(uint32_t input) {
 	uint32_t state = input * 747796405u + 2891336453u;
 	uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
 	return (word >> 22u) ^ word;
 }
+//modifies seed using RNG and returns a random float-32 between [0, 1]
 static double RandomDouble(uint32_t& seed) {
 	seed = PCGHash(seed);
 	return ((double)seed / (double)std::numeric_limits<uint32_t>::max());
@@ -97,7 +99,7 @@ public:
 		return ThreeVector(-e[0], -e[1], -e[2]);
 	}
 
-	ThreeVector clamp(double min,double max) {
+	ThreeVector clamp(double min, double max) {
 		for (double &coord : e) {
 			if (coord > max) {
 				coord = max;
@@ -110,7 +112,7 @@ public:
 	}
 
 	ThreeVector reflect(ThreeVector& normal) {
-		return *this - normal*((2 * this->dot(normal) / normal.length_squared()));
+		return *this - normal * ((2 * this->dot(normal) / normal.length_squared()));
 	}
 };
 
@@ -131,7 +133,7 @@ public:
 	double attenuation; //Energy loss on reflect
 
 	MaterialProperties(ThreeVector col, double diffuse, double attenuate) : colour(col), diffusivity(diffuse), attenuation(attenuate) {}
-	MaterialProperties() : colour(ThreeVector(0,0,0)), diffusivity(0), attenuation(0.97) {}
+	MaterialProperties() : colour(ThreeVector(0, 0, 0)), diffusivity(0), attenuation(0.97) {}
 };
 
 class Sphere {
@@ -140,7 +142,7 @@ public:
 	double radius;
 	MaterialProperties material;
 
-	Sphere(ThreeVector cen, double rad, MaterialProperties mat) : centre(cen), radius(rad), material(mat){}
+	Sphere(ThreeVector cen, double rad, MaterialProperties mat) : centre(cen), radius(rad), material(mat) {}
 	Sphere() : centre(ThreeVector()), radius(1), material(MaterialProperties()) {}
 
 	double intersect(Ray current_ray) {
@@ -149,32 +151,22 @@ public:
 		double half_b = origin_to_center.dot(current_ray.direction);
 		double c = origin_to_center.dot(origin_to_center) - radius * radius;
 		double discriminant = half_b * half_b - a * c;
+
 		if (discriminant > 0) {
 			double distance1 = (-half_b - std::sqrt(discriminant)) / a;
 				if (distance1 > 0) {
 					return distance1;
 				}
-			/*
-			double distance1 = (-b - std::sqrt(discriminant)) / (2.0 * a); //alternate way to calculate using both solutions
-			double distance2 = (-b + std::sqrt(discriminant)) / (2.0 * a);
-			if (distance1 > 0 && distance2 > distance1) {
-				return distance2;
-			}
-			else if (distance1 > 0) {
-				return distance1;
-			}
-			*/
 		}
 		return std::numeric_limits<double>::max();
 	}
 	ThreeVector normal(ThreeVector &position) {
-		return (position - centre)/radius;
+		return (position - centre) / radius;
 	}
 };
 
 class Light {
 public:
-	
 	ThreeVector position;
 	double brightness;
 	
@@ -182,7 +174,7 @@ public:
 	Light() : position(ThreeVector()), brightness(0.8) {}
 
 	ThreeVector skycolour(ThreeVector &ray_dir) {
-		double a = 2*(ray_dir.normalise().y() + 1);
+		double a = 2 * (ray_dir.normalise().y() + 1);
 		return ThreeVector(255, 255, 255) * (1 - a) + ThreeVector(180, 220, 255) * a;
 	}
 };
@@ -204,9 +196,10 @@ struct ray_payload {
 	ray_payload(Sphere* point, double dis) : sphere_pointer(point), distance(dis) {}
 };
 
-ray_payload get_payload(Ray& current_ray,std::list<Sphere>& spheres){
+ray_payload get_payload(Ray& current_ray, std::list<Sphere>& spheres){
 	Sphere* current_object_pointer = nullptr;
 	double min_distance = std::numeric_limits<double>::max();
+
 	for (Sphere& sphere : spheres) {
 		double current_distance = sphere.intersect(current_ray);
 		if (current_distance < min_distance) {
@@ -224,11 +217,12 @@ ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_li
 
 	for (int i = 0; i < remaining_bounces; i++) {
 		ray_payload payload = get_payload(current_ray, spheres);
+
 		if (payload.sphere_pointer != nullptr) {
 			ThreeVector intersect_pos = current_ray.origin + current_ray.direction*payload.distance;
 			ThreeVector hitpoint_normal = payload.sphere_pointer->normal(intersect_pos);
+
 			//General directional lighting
-			
 			ThreeVector light_to_sphere = (all_light.position - intersect_pos).normalise(); 
 			double lightsource_reflection = all_light.brightness * hitpoint_normal.dot(light_to_sphere);
 			
@@ -243,7 +237,7 @@ ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_li
 			multiplier *= payload.sphere_pointer->material.attenuation;
 
 			current_ray.origin = intersect_pos + hitpoint_normal*0.0001;
-			ThreeVector new_normal = hitpoint_normal + ThreeVector(-0.5,0.5,seed) * payload.sphere_pointer->material.diffusivity;
+			ThreeVector new_normal = hitpoint_normal + ThreeVector(-0.5, 0.5, seed) * payload.sphere_pointer->material.diffusivity;
 			current_ray.direction = current_ray.direction.reflect(new_normal);
 		}
 		else {
@@ -254,10 +248,7 @@ ThreeVector emit_ray(Ray &current_ray, std::list<Sphere>& spheres, Light &all_li
 	return current_colour;
 }
 
-void render(std::list<Sphere>& objects) {
-	int width = 1000;
-	int height = 1000;
-
+void render(std::list<Sphere>& objects, int width, int height) {
 	//Very expensive
 	int bounces = 2;
 	int ray_count = 100;
@@ -280,21 +271,18 @@ void render(std::list<Sphere>& objects) {
 
 			ThreeVector pixel_colour(0, 0, 0);
 
-			if(ray_count > 1){
-				for (int i = 0; i < ray_count; i++) {
-					uint32_t seed = (y + i + 1) * (x + 1);
-					ThreeVector ray_direction = this_camera.direction + this_camera.right * (u + (RandomDouble(seed) - 0.5) / width) + this_camera.up * (v + (RandomDouble(seed) - 0.5) / height);
-					Ray ray1(this_camera.position, ray_direction);
-					pixel_colour += emit_ray(ray1, objects, lightsource, bounces, seed).clamp(0, 255);
-				}
-				pixel_colour = pixel_colour / ray_count;
-			}
-			else {
-				uint32_t seed = (y + 1) * (x + 1);
-				ThreeVector ray_direction = this_camera.direction + this_camera.right * u + this_camera.up * v;
+			double random_shift_x = 0.0;
+			double random_shift_y = 0.0;
+			for (int i = 0; i < ray_count; i++) {
+				uint32_t seed = (y + i + 1) * (x + 1);
+				ThreeVector ray_direction = this_camera.direction + this_camera.right * (u + random_shift_x) + this_camera.up * (v + random_shift_y);
 				Ray ray1(this_camera.position, ray_direction);
-				pixel_colour = emit_ray(ray1, objects, lightsource, bounces, seed).clamp(0, 255);
+				pixel_colour += emit_ray(ray1, objects, lightsource, bounces, seed).clamp(0, 255);
+
+				random_shift_x = (RandomDouble(seed) - 0.5) / width;
+				random_shift_y = (RandomDouble(seed) - 0.5) / height;
 			}
+			pixel_colour = pixel_colour / ray_count;
 
 			rchannel = static_cast<int>(pixel_colour.x());
 			gchannel = static_cast<int>(pixel_colour.y());
@@ -303,7 +291,11 @@ void render(std::list<Sphere>& objects) {
 		}
 	}
 }
+
 int main() {
+	int width = 1000;
+	int height = 1000;
+
 	//Sphere object1(ThreeVector(2.5, 1, 0), 1, MaterialProperties(ThreeVector(200,0,0), 0.6, 0.2));
 	//Sphere object2(ThreeVector(-2.5, 1, 0), 1, MaterialProperties(ThreeVector(0, 200, 0), 0.6, 0.2));
 	//Sphere object3(ThreeVector(0, 1, 2), 1, MaterialProperties(ThreeVector(0,0,200), 0.6, 0.2));
@@ -314,7 +306,7 @@ int main() {
 	std::list<Sphere> scene = { object };
 
 	auto start = std::chrono::high_resolution_clock::now();
-	render(scene);
+	render(scene, width, height);
 	auto end = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
